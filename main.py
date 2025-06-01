@@ -46,9 +46,9 @@ def send_discord_image_pair(hour_path, day_path):
         )
 
         if response.status_code in (200, 204):
-            print("Эмбеды с изображениями успешно отправлены в Discord.")
+            print("✅ Эмбеды с изображениями успешно отправлены в Discord.")
         else:
-            print(f"Ошибка при отправке: {response.status_code} - {response.text}")
+            print(f"❌ Ошибка при отправке: {response.status_code} - {response.text}")
 
 
 def fetch_staff_total():
@@ -79,15 +79,16 @@ def read_data_from_file(filename, filter_date=None, filter_hour=None):
                 if len(parts) == 3:
                     date_part, time_part, val = parts
                     if filter_date and date_part != filter_date:
-                        continue  # пропускаем данные не из нужной даты
+                        continue
                     if filter_hour and time_part.split(":")[0] != filter_hour:
-                        continue  # пропускаем данные не из нужного часа
+                        continue
                     times.append(time_part)
                     values.append(int(val))
     except FileNotFoundError:
         pass
 
     return times, values
+
 
 def clear_file(filename):
     try:
@@ -96,19 +97,17 @@ def clear_file(filename):
         print(f"Ошибка при очистке файла {filename}: {e}")
 
 
-def plot_graph(times, values, title, xlabel, ylabel, filename):
+def plot_graph(times, values, title, xlabel, ylabel, filename, total_value):
     plt.figure(figsize=(12, 5))
     plt.plot(times, values, color='blue', marker='o', linestyle='-', linewidth=2)
     plt.xticks(rotation=45)
-    plt.title(title)
+    plt.title(f"{title} (Всего: {total_value})")
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     plt.grid(True)
 
     ax = plt.gca()
     ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-    ax.yaxis.get_major_locator().set_params(integer=True)
-
     plt.tight_layout()
     plt.savefig(filename)
     plt.close()
@@ -125,7 +124,7 @@ def main_loop():
         date_str = now_dt.strftime("%Y-%m-%d")
         current_hour_str = now_dt.strftime("%H")
 
-        # Очистка файлов по времени (чистим при смене часа или дня)
+        # очистка файлов при новом часе/дне
         if now_dt.hour != last_hour:
             clear_file(HOUR_FILE)
             last_hour = now_dt.hour
@@ -136,27 +135,28 @@ def main_loop():
 
         current_staff_total = fetch_staff_total()
         if current_staff_total is None:
-            print(f"[{now_str}] Не удалось получить данные.")
+            print(f"[{now_str}] ❌ Не удалось получить данные.")
             time.sleep(60)
             continue
 
         if prev_staff_total is not None:
             diff = current_staff_total - prev_staff_total
-
-            # Запись с датой
             append_to_file(HOUR_FILE, now_str, diff, date_str)
             append_to_file(DAY_FILE, now_str, diff, date_str)
 
-            # Чтение и фильтрация по дате/часу
             hour_times, hour_values = read_data_from_file(HOUR_FILE, filter_date=date_str, filter_hour=current_hour_str)
             day_times, day_values = read_data_from_file(DAY_FILE, filter_date=date_str)
+
+            hour_total = sum(hour_values)
+            day_total = sum(day_values)
 
             plot_graph(
                 hour_times, hour_values,
                 "Баны стаффа за последний час",
                 "Время",
                 "Количество банов",
-                HOUR_GRAPH
+                HOUR_GRAPH,
+                hour_total
             )
 
             plot_graph(
@@ -164,12 +164,15 @@ def main_loop():
                 "Баны стаффа за последние сутки",
                 "Время",
                 "Количество банов",
-                DAY_GRAPH
+                DAY_GRAPH,
+                day_total
             )
 
-            send_discord_image_pair(HOUR_GRAPH, DAY_GRAPH)
+            print(f"[{now_str}] ➕ За последнюю минуту забанили: {diff}")
 
-            print(f"[{now_str}] За последнюю минуту забанили: {diff}")
+            # Отправка в Discord — раз в час, в 00 минут (например, 14:00, 15:00 и т.д.)
+            if now_dt.minute == 0:
+                send_discord_image_pair(HOUR_GRAPH, DAY_GRAPH)
 
         prev_staff_total = current_staff_total
         time.sleep(60)
