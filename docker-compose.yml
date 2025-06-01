@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  hypixel-bot:
+    build: .
+    container_name: hypixel-stats-bot
+    restart: always
+    volumes:
+      - ./output:/app
+    working_dir: /app
